@@ -48,9 +48,11 @@ async fn main() {
             };
 
             if Some(url) = url {
-                // TODO: fetch and process the url
-                // TODO: handle the result
+                fetch_url(&url).await.expect("Failed to fetch the url");
+                let links = extract_links(&html);
                 // TODO: add the new urls to the manager
+                let mut manager = manager_clone.lock().await;
+                manager.add_url(links);
             }
 
         });
@@ -62,7 +64,6 @@ async fn main() {
 
     for handle in handles {
         handle.await.expect("Failed to run the task");
-    
     }
 }
 
