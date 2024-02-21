@@ -1,4 +1,5 @@
-ีuse tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{Mutex, Semaphore};
+use std::sync::Arc;
 use reqwest::Error;
 use scraper::{Html, Selector};
 
@@ -29,30 +30,37 @@ fn extract_links(html: &str) -> Vec<String> {
 
 #[tokio::main]
 async fn main() {
-    let url_manager = Arc::new(Mutex::new(UrlManager::new()));
-    // limit to 10 concurrent request inorder to not get by ip banned
-    let semaphore = Arc::new(Semaphore::new(10)); 
+let url_manager = Arc::new(Mutex::new(UrlManager::new()));
+    
 
     let mut handles = vec![];
 
     for _ in 0..10 {
         let manager_clone = url_manager.clone();
-        let semaphore_clone = semaphore.clone();
 
         let handle = tokio::spawn(async move {
-            let _permit = semaphore_clone.acquire().await.expect("Failed to acquire semaphore");
+            loop {
 
-            let url = {
-                let mut manager = manager_clone.lock().await;
-                manager.get_next_url();
-            };
+                let url = {
+                    let mut manager = manager_clone.lock().await;
+                    manager.get_next_url()
+                };
 
-            if Some(url) = url {
-                fetch_url(&url).await.expect("Failed to fetch the url");
-                let links = extract_links(&html);
-                // TODO: add the new urls to the manager
-                let mut manager = manager_clone.lock().await;
-                manager.add_url(links);
+                match url {
+                    Some(url) => {
+                        match fetch_url(&url).await {
+                            Ok(body) => {
+                                let links = extract_links(&body);
+                                let mut manager = manager_clone.lock().await;
+                                manager.add_url(links);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to fetch {}: {}", url, e);
+                            }
+                        }
+                    },
+                    None => break,
+                }
             }
 
         });
@@ -63,7 +71,7 @@ async fn main() {
 
 
     for handle in handles {
-        handle.await.expect("Failed to run the task");
+        let _ = handle.await;
     }
 }
 
