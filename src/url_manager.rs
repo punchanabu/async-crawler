@@ -28,6 +28,10 @@ impl UrlManager {
             url
         })
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.to_visit.is_empty()
+    }
 }
 
 #[cfg(test)]
