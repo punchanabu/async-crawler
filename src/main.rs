@@ -1,7 +1,8 @@
-use std::collections::HashSet;
-
+ีuse tokio::sync::{Mutex, Semaphore};
 use reqwest::Error;
 use scraper::{Html, Selector};
+
+use async_crawler::url_manager::UrlManager;
 
 async fn fetch_url(url: &str) -> Result<String,Error> {
     let response = reqwest::get(url).await?;
@@ -26,53 +27,46 @@ fn extract_links(html: &str) -> Vec<String> {
 }
 
 
-struct UrlManager {
-    visited: HashSet<String>,
-    to_visit: HashSet<String>
-}
-
-impl UrlManager {
-    fn new() -> Self {
-        UrlManager {
-            visited: HashSet::new(),
-            to_visit: HashSet::new()
-        }
-    }
-
-    fn add_url(&mut self, urls: Vec<String>) {
-        for url in urls {
-            if !self.visited.contains(&url) {
-                self.to_visit.insert(url);
-            }
-        }
-    }
-
-    fn get_next_url(&mut self) -> Option<String> {
-        self.to_visit.iter().next().cloned().map(|url| {
-            self.to_visit.remove(&url);
-            self.visited.insert(url.clone());
-            url
-        })
-    }
-}
-
-
 #[tokio::main]
 async fn main() {
-    let mut url_manager = UrlManager::new();
-    let start_url = "https://www.rust-lang.org/";
-    url_manager.add_url(vec![start_url.to_string()]);
-    
-    while let Some(url) = url_manager.get_next_url() {
-        match fetch_url(&url).await {
-            Ok(html) => {
-                let links = extract_links(&html);
-                println!("Fetched {} with {} links", url, links.len());
-                url_manager.add_url(links);
-            },
-            Err(e) => {
-                println!("Error fetching {}: {}", url, e);
+    let url_manager = Arc::new(Mutex::new(UrlManager::new()));
+    // limit to 10 concurrent request inorder to not get by ip banned
+    let semaphore = Arc::new(Semaphore::new(10)); 
+
+    let mut handles = vec![];
+
+    for _ in 0..10 {
+        let manager_clone = url_manager.clone();
+        let semaphore_clone = semaphore.clone();
+
+        let handle = tokio::spawn(async move {
+            let _permit = semaphore_clone.acquire().await.expect("Failed to acquire semaphore");
+
+            let url = {
+                let mut manager = manager_clone.lock().await;
+                manager.get_next_url();
+            };
+
+            if Some(url) = url {
+                // TODO: fetch and process the url
+                // TODO: handle the result
+                // TODO: add the new urls to the manager
             }
-        }
+
+        });
+
+
+        handles.push(handle);
     }
+
+
+    for handle in handles {
+        handle.await.expect("Failed to run the task");
+    
+    }
+}
+
+#[cfg(test)]
+mod test {
+    // TODO: Add tests
 }
