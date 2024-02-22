@@ -85,5 +85,65 @@ async fn crawl_task(client: Arc<Client>, url_manager: Arc<Mutex<UrlManager>>, ur
 
 #[cfg(test)]
 mod test {
-    // TODO: Add tests duay na
+
+    use super::*;
+
+    #[test]
+    fn extract_link() {
+        let html = r#"
+            <html>
+                <body>
+                    <a href="http://google.com">Google</a>
+                    <a href="http://yahoo.com">Yahoo</a>
+                    <a href="http://bing.com">Bing</a>
+                </body>
+            </html>
+        "#;
+
+        let links = extract_links(html);
+        
+        // expect links to equals to 3
+        assert_eq!(links.len(), 3);
+
+        // expect links to contains the following
+        assert_eq!(links[0], "http://google.com");
+        assert_eq!(links[1], "http://yahoo.com");
+        assert_eq!(links[2], "http://bing.com");
+        
+        // expects links to not contains the following
+        assert_ne!(links[0], "http://facebook.com");
+        assert_ne!(links[1], "http://twitter.com"); 
+        assert_ne!(links[2], "http://instagram.com");
+    }
+    
+    #[tokio::test]
+    async fn test_crawl_task_success() {
+        // setup your mock server or HTTP response
+        let mock_server = mockito::mock("GET", "/test-page")
+            .with_status(200)
+            .with_body(r#"
+                <html>
+                    <body>
+                        <a href="http://google.com">Google</a>
+                        <a href="http://yahoo.com">Yahoo</a>
+                        <a href="http://bing.com">Bing</a>
+                    </body>
+                </html>
+            "#)
+            .create();
+
+
+        let client = Arc::new(Client::new());
+        let url_manager = Arc::new(Mutex::new(UrlManager::new()));
+        let url = mockito::server_url() + "/test-page";
+
+        crawl_task(client, url_manager.clone(), url).await;
+
+        // verify that links were added to the UrlManager
+        let manager = url_manager.lock().await;
+        assert!(!manager.is_empty(), "UrlManager should have linked Added");
+
+        mock_server.assert();
+    }
+    
 }
